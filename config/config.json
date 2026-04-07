@@ -1,0 +1,21 @@
+{
+  "smtp": {
+    "host": "smtp.qq.com",
+    "port": 465,
+    "security": "ssl",
+    "sender": "your_qq_number@qq.com",
+    "recipient": "your_qq_number@qq.com",
+    "keychain_service": "task-notify-qq-smtp",
+    "auth_env_var": "TASK_NOTIFY_SMTP_PASSWORD"
+  },
+  "queue": {
+    "poll_interval_seconds": 5,
+    "base_retry_seconds": 15,
+    "max_retry_seconds": 1800,
+    "processing_stale_seconds": 600,
+    "max_attempts": 0
+  },
+  "email": {
+    "subject_prefix": "[task-notify]"
+  }
+}
