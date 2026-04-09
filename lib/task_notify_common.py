@@ -16,6 +16,11 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
 
 HOME = Path.home()
 BASE_DIR = HOME / ".local" / "share" / "task-notify"
@@ -32,6 +37,45 @@ LOG_PATH = LOG_DIR / "sender.log"
 
 class RetryableSendError(Exception):
     pass
+
+
+class SingleInstanceLock:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.handle: Any | None = None
+
+    def acquire(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.path.open("a+", encoding="utf-8")
+        try:
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return False
+
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
+        self.handle = handle
+        return True
+
+    def release(self) -> None:
+        if self.handle is None:
+            return
+        try:
+            if os.name == "nt":
+                self.handle.seek(0)
+                msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        self.handle.close()
+        self.handle = None
 
 
 def now_ts() -> float:
@@ -271,6 +315,14 @@ def build_body(event: dict[str, Any]) -> str:
     if event["kind"] == "codex_turn_completed":
         lines.append(f"turn_id: {event['turn_id']}")
         lines.append(f"stop_hook_active: {event['stop_hook_active']}")
+        if event.get("source"):
+            lines.append(f"source: {event['source']}")
+        if event.get("codex_originator"):
+            lines.append(f"codex_originator: {event['codex_originator']}")
+        if event.get("codex_cli_version"):
+            lines.append(f"codex_cli_version: {event['codex_cli_version']}")
+        if event.get("codex_source"):
+            lines.append(f"codex_source: {event['codex_source']}")
         lines.append("")
         lines.append("assistant_message:")
         lines.append(event["assistant_message"])

@@ -21,8 +21,10 @@ from task_notify_common import (  # noqa: E402
     PROCESSING_DIR,
     SENT_DIR,
     RetryableSendError,
+    SingleInstanceLock,
     atomic_write_json,
     build_body,
+    BASE_DIR,
     ensure_runtime_dirs,
     event_path,
     format_bool,
@@ -147,15 +149,22 @@ def process_one(config: dict[str, object], dry_run: bool) -> bool:
 def run_forever(config: dict[str, object], dry_run: bool) -> int:
     recover_processing_files(config)
     idle_sleep = int(config["queue"]["poll_interval_seconds"])
+    lock = SingleInstanceLock(BASE_DIR / "state" / "sender.lock")
+    if not lock.acquire():
+        log_line("sender loop skipped: another sender instance is already running")
+        return 0
     log_line("sender loop started")
-    while True:
-        try:
-            handled = process_one(config, dry_run=dry_run)
-        except Exception as exc:
-            log_line(f"sender loop error: {exc}")
-            handled = False
-        if not handled:
-            time.sleep(idle_sleep)
+    try:
+        while True:
+            try:
+                handled = process_one(config, dry_run=dry_run)
+            except Exception as exc:
+                log_line(f"sender loop error: {exc}")
+                handled = False
+            if not handled:
+                time.sleep(idle_sleep)
+    finally:
+        lock.release()
 
 
 def main() -> int:
